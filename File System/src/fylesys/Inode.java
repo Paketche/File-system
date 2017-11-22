@@ -6,6 +6,7 @@ import util.Utils;
 
 public class Inode extends DataBlock {
 
+	public static final int size = 128;
 	int EXT2_N_BLOCKS = 12;
 
 	public static final HashMap<String, String> flags = new HashMap<>();
