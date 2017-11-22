@@ -4,6 +4,8 @@ import util.Utils;
 
 public class GroupDescriptor extends DataBlock {
 
+	public static final int size = 32;
+	
 	private static int groupdescriptorid = 0;
 	private int gDid;
 	private int inode_table_pointer = 8;
