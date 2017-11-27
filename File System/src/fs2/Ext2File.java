@@ -23,11 +23,8 @@ public class Ext2File {
 	public Ext2File(Volume vol, String name) {
 		volume = vol;
 		fullname = name;
-
-		for (nameIndex = fullname.length() - 1; nameIndex > 0; nameIndex--) {
-			if (fullname.charAt(nameIndex) == '/')
-				break;
-		}
+		nameIndex = name.lastIndexOf('/');
+		
 
 	}
 
@@ -36,8 +33,7 @@ public class Ext2File {
 		this.inode = inode;
 		fullname = name;
 		size = inode.getI_size();
-
-		initFileContents();
+		//nameIndex = name.lastIndexOf('/');
 	}
 
 	/**
@@ -56,7 +52,14 @@ public class Ext2File {
 	 *         null - if not
 	 */
 	public Ext2File getParent() {
-		return volume.getFile(fullname.substring(0, nameIndex));
+		try {
+			return volume.getFile(fullname.substring(0, nameIndex), fullname.substring(nameIndex));
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return null;
+		}
+
 	}
 
 	public void ls() {
@@ -86,7 +89,7 @@ public class Ext2File {
 
 	/**
 	 * Returns an array of file locate in this directory( if the this is a
-	 * directory)
+	 * directory) {@link #listExt2Files() }
 	 * 
 	 * @return Returns an array of file locate in this directory if this is a
 	 *         directory </br>
@@ -94,9 +97,21 @@ public class Ext2File {
 	 * @throws IOException
 	 */
 	public Ext2File[] listExt2Files() throws IOException {
-		if (!isDirectory())
+		return listExt2Files(null);
+	}
+
+	/**
+	 * 
+	 * @param filter
+	 * @return
+	 * @throws IOException
+	 */
+	public Ext2File[] listExt2Files(Ext2FilenameFilter filter) throws IOException {
+		if (!isDirectory()) {
 			return null;
+		}
 		else {
+			initFileContents();
 			if (subfiles == null) {
 				ArrayList<Ext2File> inodes = new ArrayList<>();
 
@@ -111,7 +126,8 @@ public class Ext2File {
 					int namelen = buffer.readInt(offset + 6, 1);
 					String name = buffer.readString(offset + 8, namelen);
 
-					inodes.add(new Ext2File(volume, volume.getInode(inode), name));
+					if (filter == null || filter.accept(name))
+						inodes.add(new Ext2File(volume, volume.getInode(inode), name));
 
 					offset += length;
 					if (offset == Volume.blockSize)
@@ -122,8 +138,9 @@ public class Ext2File {
 				subfiles = new Ext2File[inodes.size()];
 				inodes.toArray(subfiles);
 			}
+			return subfiles;
 		}
-		return subfiles;
+		
 	}
 
 	/**
@@ -180,21 +197,14 @@ public class Ext2File {
 	 * Initializes the contents of a file
 	 */
 	private void initFileContents() {
-
+		// this holds the numbers of all the blocks that hold contents of this file
 		Integer[] dataBlocks = inode.getBlockPointers();
 
-		buffer = new LittleEndianBuffer(dataBlocks.length * 1024);
-
-		// this holds the numbers of all the blocks that hold contents of this file
-		if (getName().equals("dir-e")) {
-			System.out.println(inode.offset);
-		}
+		buffer = new LittleEndianBuffer(dataBlocks.length * Volume.blockSize);
 
 		for (Integer db : dataBlocks) {
 			buffer.write(volume.getBlock(db));
 		}
-
-		// for test file buffer is 1905 and you are trying to put 2 block in the buffer
 
 		buffer.flip();
 	}
