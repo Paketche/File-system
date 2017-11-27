@@ -17,7 +17,6 @@ public class Volume {
 
 	private ByteBuffer buffer;
 
-
 	public static Volume initVolume(String path) throws IOException {
 		Volume vol = new Volume(path);
 		vol.initSuperBlock();
@@ -25,41 +24,7 @@ public class Volume {
 		vol.initInodeTable();
 		vol.initRoot();
 
-//		LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(2048, 32));
-//		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(2048 + 32, 32));
-//		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(2048 + 32 * 2, 32));
-//
-//		System.out.println(vol.getInode(2).offset);
-//		LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(vol.getInode(2).offset, 128));
-//		
-//		System.out.println(vol.getInode(1715).offset);
-//		LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(vol.getInode(1715).offset, 128));
-		
-		
-
-	
-//			LittleEndianBuffer.dumpHexRepresnetation(vol.getFromBlock(0x54, 128, 128));
-		
-		// for (int i = 0; i < 3; i++) {
-		// System.out.println(0x2054 + i);
-		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(0x2054 * 1024, 128));
-		// }
-		// for (int i = 0; i < 3; i++) {
-		// System.out.println(0x4003 + i);
-		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(0x4003 * 1024, 128));
-		// }
-
-		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(8475136, 128));
-		// System.out.println(vol.getInode(1715).offset);
-		//
-		// System.out.println(vol.getInode(1716).offset);
-		// LittleEndianBuffer.dumpHexRepresnetation(vol.getBytes(vol.getInode(1716).offset,
-		// 128));
-
-		//Volume.traverse(vol.root, 0);
-
 		Volume.traverse(vol.root, 0);
-		
 		return vol;
 	}
 
@@ -122,6 +87,7 @@ public class Volume {
 	private void initInodeTable() {
 		inodeTable = new Inode[superblock.inodesInFileSystem()];
 
+		int inodesInGroup = superblock.inodesInGroup();
 		// filles in the inode table
 		for (int i = 0; i < inodeTable.length; i++) {
 			/*
@@ -130,17 +96,13 @@ public class Volume {
 			 * say we want inode 5 and there are 3 inodes per group block this variable will
 			 * then be 1 because inode 5 will be the second inode in the second block group
 			 */
-			int inode = i % superblock.inodesInGroup();
+			int inode = i % inodesInGroup;
 
 			/*
 			 * index pointing to a group descriptor int the group descriptor array that the
 			 * inode will be in
 			 */
-			int groupDescritor = i / superblock.inodesInGroup();
-
-			if (inode == 2 && groupDescritor == 0) {
-
-			}
+			int groupDescritor = i / inodesInGroup;
 
 			// get the inode table pointer
 			inodeTable[i] = new Inode(this, groupDescriptors[groupDescritor].inodeTablePointer() * blockSize + inode * Inode.size);
@@ -166,7 +128,6 @@ public class Volume {
 	 * @return block's data
 	 */
 	byte[] getBlock(int block) {
-
 		return getBytes(block * blockSize, blockSize);
 	}
 
@@ -248,17 +209,32 @@ public class Volume {
 
 	/**
 	 * 
-	 * @param substring
+	 * @param parentPath
+	 * @param fileName
 	 * @return
+	 * @throws IOException
 	 */
-	public Ext2File getFile(String substring) {
+	public Ext2File getFile(String parentPath, String fileName) throws IOException {
+		if (parentPath.equals("")) {
+			return root.listExt2Files((str) -> {
+				return str.equals(fileName);
+			})[0];
+		}
+		
+		String newParent ="";
+		String newChild = "";
+		int last = parentPath.lastIndexOf('/');
 		try {
-			root.fullyRead();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			newParent = parentPath.substring(0, last);
+			newChild =parentPath.substring(last + 1);
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		return null;
+		
+		
+		Ext2File newFile = getFile(newParent, newChild).listExt2Files((str) -> {
+			return str.equals(fileName);
+		})[0];
+		return newFile;
 	}
-
 }
