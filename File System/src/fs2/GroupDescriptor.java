@@ -2,12 +2,12 @@ package fs2;
 
 public class GroupDescriptor {
 
-	public static int size = 32;
+	public static final int size = 32;
 
 	private Volume volume;
-	 int offset;
+	int offset;
 
-	private static int inodeTablePointer = 8;
+	private static final int inodeTablePointer = 8;
 
 	public GroupDescriptor(Volume vol, int offset) {
 		volume = vol;
@@ -17,5 +17,4 @@ public class GroupDescriptor {
 	public int inodeTablePointer() {
 		return volume.getIntAt(offset + inodeTablePointer, 4);
 	}
-
 }
