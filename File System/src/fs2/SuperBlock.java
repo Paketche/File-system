@@ -5,12 +5,12 @@ public class SuperBlock {
 	private Volume volume;
 	private int offset;
 
-	private static int numInodesFileSys = 0;
-	private static int numBlocksFileSys = 4;
-	private static int numBlocksGroup = 32;
-	private static int numInodesGroup = 40;
-	private static int inodeSize = 88;
-	private static int volLable = 120;
+	private static final int numInodesFileSys = 0;
+	private static final int numBlocksFileSys = 4;
+	private static final int numBlocksGroup = 32;
+	private static final int numInodesGroup = 40;
+	private static final int inodeSize = 88;
+	private static final int volLable = 120;
 
 	public SuperBlock(Volume vol, int offset) {
 		volume = vol;
