@@ -8,18 +8,18 @@ public class Inode {
 
 	public static final int size = 128;
 
-	private int i_mode = 0;
-	private int i_uid = 2;
-	private int i_size_l = 4;
-	private int i_atime = 8;
-	private int i_ctime = 12;
-	private int i_mtime = 16;
-	private int i_dtime = 20;
-	private int i_gid = 24;
-	private int i_links_count = 26;
-	private int i_block = 40;
-	private int first_ind = 88; // !!! questionable
-	private int i_size_u = 108;
+	private static final int i_mode = 0;
+	private static final int i_uid = 2;
+	private static final int i_size_l = 4;
+	private static final int i_atime = 8;
+	private static final int i_ctime = 12;
+	private static final int i_mtime = 16;
+	private static final int i_dtime = 20;
+	private static final int i_gid = 24;
+	private static final int i_links_count = 26;
+	private static final int i_block = 40;
+	private static final int first_ind = 88;
+	private static final int i_size_u = 108;
 
 	private Integer[] blockPointers;
 	private int BlocksPointersTogo;
@@ -58,8 +58,7 @@ public class Inode {
 	 * @return
 	 */
 	public int getI_size() {
-
-		return volume.getIntAt(offset + i_size_l, 4) + volume.getIntAt(offset + i_size_u, 4) * (int) Math.pow(2, 16);
+		return volume.getIntAt(offset + i_size_u, 4) * (int) Math.pow(2, 16) + volume.getIntAt(offset + i_size_l, 4);
 	}
 
 	/**
@@ -137,10 +136,19 @@ public class Inode {
 		return blocks;
 	}
 
+	/**
+	 * 
+	 * @param number
+	 * @return
+	 */
 	public int get_indirect(int number) {
 		return volume.getIntAt(offset + first_ind + (number - 1) * 4, 4);
 	}
 
+	/**
+	 * 
+	 * @return
+	 */
 	public Integer[] getBlockPointers() {
 		if (this.blockPointers == null) {
 			ArrayList<Integer> blockpointers = new ArrayList<>();
@@ -155,8 +163,7 @@ public class Inode {
 						blockpointers.add(pointer);
 					}
 
-					this.BlocksPointersTogo--;
-					if (BlocksPointersTogo == 0)
+					if (--BlocksPointersTogo == 0)
 						break blockGathering;
 				}
 
@@ -166,6 +173,7 @@ public class Inode {
 					blockpointers.addAll(nums);
 				}
 			}
+
 			blockPointers = new Integer[blockpointers.size()];
 			blockpointers.toArray(blockPointers);
 		}
