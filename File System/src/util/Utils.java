@@ -25,6 +25,16 @@ public class Utils {
 		return hex;
 	}
 
+	public static String byteArrayToASCIIString(byte[] num) {
+		String string = "";
+		
+		for (int i = 0; i < num.length; i++) {
+			string += (char) (num[i] & 0xff);
+		}
+
+		return string;
+	}
+
 	public static byte HexCharTobyte(char hex) {
 
 		if (hex >= '0' && hex <= '9') {
