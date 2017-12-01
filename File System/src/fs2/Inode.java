@@ -6,8 +6,14 @@ import java.util.Iterator;
 
 public class Inode {
 
+	/**
+	 * Size of an inode in bytes
+	 */
 	public static final int size = 128;
 
+	/**
+	 * Offsets
+	 */
 	private static final int i_mode = 0;
 	private static final int i_uid = 2;
 	private static final int i_size_l = 4;
@@ -21,8 +27,47 @@ public class Inode {
 	private static final int first_ind = 88;
 	private static final int i_size_u = 108;
 
-	private Integer[] blockPointers;
-	private int BlocksPointersTogo;
+	/**
+	 * File mode
+	 */
+	private int mode;
+	/**
+	 * User ID of owner
+	 */
+	private int uid;
+	/**
+	 * Size in bytes
+	 */
+	private long sizeB;
+	/**
+	 * Last access time
+	 */
+	private Date atime;
+	/**
+	 * Last time the inode changed
+	 */
+	private Date ctime;
+	/**
+	 * Last time that file contents changed
+	 */
+	private Date mtime;
+	/**
+	 * Time the file was deleted
+	 */
+	private Date dtime;
+	/**
+	 * Group ID of owner
+	 */
+	private int gid;
+	/**
+	 * Count of hard links to file
+	 */
+	private short link_count;
+
+	/**
+	 * Hold The number of block that we
+	 */
+	private long BlocksPointersTogo;
 
 	private Volume volume;
 	int offset;
@@ -30,6 +75,20 @@ public class Inode {
 	public Inode(Volume vol, int offset) {
 		volume = vol;
 		this.offset = offset;
+
+		mode = volume.getShortAt(offset + i_mode);
+		uid = volume.getShortAt(offset + i_uid);
+
+		// combines the upper and lower bits of the size
+		sizeB = (volume.getIntAt(offset + i_size_u) * (int) Math.pow(2, 32)) + volume.getIntAt(offset + i_size_l);
+
+		atime = new Date(volume.getIntAt(offset + i_atime) * 1000);
+		ctime = new Date(volume.getIntAt(offset + i_ctime) * 1000);
+		mtime = new Date(volume.getIntAt(offset + i_mtime) * 1000);
+		dtime = new Date(volume.getIntAt(offset + i_dtime) * 1000);
+
+		gid = volume.getShortAt(offset + i_gid);
+		link_count = volume.getShortAt(offset + i_links_count);
 
 		BlocksPointersTogo = getI_size() / Volume.blockSize + (getI_size() % Volume.blockSize == 0 ? 0 : 1);
 	}
@@ -40,7 +99,7 @@ public class Inode {
 	 * @return file type and access rights
 	 */
 	public int getI_mode() {
-		return volume.getIntAt(offset + i_mode, 2);
+		return mode;
 	}
 
 	/**
@@ -49,7 +108,7 @@ public class Inode {
 	 * @return Owner identifier
 	 */
 	public int getI_uid() {
-		return volume.getIntAt(offset + i_uid, 2);
+		return uid;
 	}
 
 	/**
@@ -57,8 +116,8 @@ public class Inode {
 	 * 
 	 * @return
 	 */
-	public int getI_size() {
-		return volume.getIntAt(offset + i_size_u, 4) * (int) Math.pow(2, 16) + volume.getIntAt(offset + i_size_l, 4);
+	public long getI_size() {
+		return sizeB;
 	}
 
 	/**
@@ -67,8 +126,7 @@ public class Inode {
 	 * @return
 	 */
 	public Date getI_atime() {
-		long date = volume.getIntAt(offset + i_atime, 4) * 1000;
-		return new Date(date);
+		return atime;
 	}
 
 	/**
@@ -77,8 +135,7 @@ public class Inode {
 	 * @return
 	 */
 	public Date getI_ctime() {
-		long date = volume.getIntAt(offset + i_ctime, 4) * 1000;
-		return new Date(date);
+		return ctime;
 	}
 
 	/**
@@ -87,8 +144,7 @@ public class Inode {
 	 * @return
 	 */
 	public Date getI_mtime() {
-		long date = volume.getIntAt(offset + i_mtime, 4) * 1000;
-		return new Date(date);
+		return mtime;
 	}
 
 	/**
@@ -97,8 +153,7 @@ public class Inode {
 	 * @return
 	 */
 	public Date getI_dtime() {
-		long date = volume.getIntAt(offset + i_dtime, 4) * 1000;
-		return new Date(date);
+		return dtime;
 	}
 
 	/**
@@ -107,7 +162,7 @@ public class Inode {
 	 * @return
 	 */
 	public int getI_gid() {
-		return volume.getIntAt(offset + i_gid, 2);
+		return gid;
 	}
 
 	/**
@@ -116,7 +171,7 @@ public class Inode {
 	 * @return
 	 */
 	public int getI_links_count() {
-		return volume.getIntAt(offset + i_links_count, 2);
+		return link_count;
 	}
 
 	/**
@@ -124,12 +179,11 @@ public class Inode {
 	 * 
 	 * @return
 	 */
-	public int[] getI_block() {
+	private int[] getI_block() {
 		int[] blocks = new int[12];
 
 		for (int i = 0; i < blocks.length; i++) {
-			int offseti = offset + i_block + i * 4;
-			int value = this.volume.getIntAt(offseti, 4);
+			int value = this.volume.getIntAt(offset + i_block + i * 4);
 			blocks[i] = value;
 		}
 
@@ -137,46 +191,49 @@ public class Inode {
 	}
 
 	/**
+	 * Returns the value of an indirect pointer
 	 * 
 	 * @param number
-	 * @return
+	 *          level of indirection
+	 * @return the value of an indirect pointer
 	 */
-	public int get_indirect(int number) {
-		return volume.getIntAt(offset + first_ind + (number - 1) * 4, 4);
+	private int get_indirect(int number) {
+		return volume.getIntAt(offset + first_ind + (number - 1) * 4);
 	}
 
 	/**
+	 * Returns an array of all the block numbers of data blocks holding the contents
+	 * of the inode's file
 	 * 
-	 * @return
+	 * @return array of content block numbers
 	 */
 	public Integer[] getBlockPointers() {
-		if (this.blockPointers == null) {
-			ArrayList<Integer> blockpointers = new ArrayList<>();
+		ArrayList<Integer> blockpointers = new ArrayList<>();
 
-			blockGathering: {
-				// get first 12 block
-				int[] first12 = getI_block();
+		blockGathering: {
+			// get first 12 block
+			int[] first12 = getI_block();
 
-				for (int pointer : first12) {
-					// the pointer is a zero all of the file blocks are read
-					if (pointer != 0) {
-						blockpointers.add(pointer);
-					}
+			//put them in into the blockpointers list
+			for (int pointer : first12) {
 
-					if (--BlocksPointersTogo == 0)
-						break blockGathering;
-				}
+				if (pointer != 0)
+					blockpointers.add(pointer);
 
-				// get the block pointers from the indirect pointers
-				for (int i = 1; i < 3 && BlocksPointersTogo > 0; i++) {
-					ArrayList<Integer> nums = indirectPointers(get_indirect(i), i);
-					blockpointers.addAll(nums);
-				}
+				if (--BlocksPointersTogo == 0)
+					break blockGathering;
 			}
 
-			blockPointers = new Integer[blockpointers.size()];
-			blockpointers.toArray(blockPointers);
+			// get the block pointers from the indirect pointers
+			for (int i = 1; i <= 3 && BlocksPointersTogo > 0; i++) {
+				ArrayList<Integer> nums = indirectPointers(get_indirect(i), i);
+				blockpointers.addAll(nums);
+			}
 		}
+
+		Integer[] blockPointers = new Integer[blockpointers.size()];
+		blockpointers.toArray(blockPointers);
+
 		return blockPointers;
 	}
 
@@ -199,13 +256,12 @@ public class Inode {
 			for (int i = 0; i < Volume.blockSize; i += 4) {
 
 				// get the block number
-				int blockNumber = volume.getIntAt(block + i, 4);
-				// no need to read in this case
+				int blockNumber = volume.getIntAt(block + i);
 
 				if (blockNumber != 0)
 					pointers.add(blockNumber);
 
-				if (BlocksPointersTogo == 0)
+				if (--BlocksPointersTogo == 0)
 					break;
 			}
 
