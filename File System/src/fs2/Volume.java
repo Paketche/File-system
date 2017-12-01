@@ -3,36 +3,29 @@ package fs2;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-
-import util.Utils;
+import java.nio.ByteOrder;
 
 public class Volume {
 
-	static final int blockSize = 1024;
+	public static final int blockSize = 1024;
 
+	/**
+	 * A reference to the first super block in the file system
+	 */
 	private SuperBlock superblock;
-	private GroupDescriptor[] groupDescriptors;
-	private Inode[] inodeTable;
-	private Ext2File root;
-
+	/**
+	 * Reference to the root directory in the file system
+	 */
+	Ext2File root;
+	/**
+	 * Holds the whole directory
+	 */
 	private ByteBuffer buffer;
-
-	public static Volume initVolume(String path) throws IOException {
-		Volume vol = new Volume(path);
-		vol.initSuperBlock();
-		vol.initGroupDescriptors();
-		vol.initInodeTable();
-		vol.initRoot();
-
-		Volume.traverse(vol.root, 0);
-		return vol;
-	}
 
 	public static void traverse(Ext2File file, int indent) throws IOException {
 		Ext2File[] subs = file.listExt2Files();
 
 		for (Ext2File sub : subs) {
-
 			for (int i = 0; i < indent; i++) {
 				System.out.print(" ");
 			}
@@ -46,12 +39,18 @@ public class Volume {
 		}
 	}
 
-	private Volume(String path) throws IOException {
+	public Volume(String path) throws IOException {
 		RandomAccessFile file = new RandomAccessFile(path, "r");
 		byte[] full = new byte[(int) file.length()];
 		file.readFully(full);
 		file.close();
+
 		buffer = ByteBuffer.wrap(full);
+		buffer.order(ByteOrder.LITTLE_ENDIAN);
+
+		initSuperBlock();
+		System.out.println(superblock.volumeName());
+		initRoot();
 	}
 
 	/**
@@ -63,53 +62,6 @@ public class Volume {
 	}
 
 	/**
-	 * Initializes an array of Group Descriptors
-	 */
-	private void initGroupDescriptors() {
-		// gets the number of group descriptors
-		// if the division has a remainder we add 1 to round it up
-		int gds = superblock.inodesInFileSystem() / superblock.inodesInGroup()
-				+ (superblock.inodesInFileSystem() % superblock.inodesInGroup() == 0 ? 0 : 1);
-
-		groupDescriptors = new GroupDescriptor[gds];
-
-		for (int i = 0; i < groupDescriptors.length; i++) {
-			// Read data of size equal to a group descriptors size,
-			// i * group descriptor's size is used as an offset
-			// start reading from the second block where the first group descriptor is
-			groupDescriptors[i] = new GroupDescriptor(this, 2 * blockSize + i * GroupDescriptor.size);
-		}
-	}
-
-	/**
-	 * Initializes an array of Inodes
-	 */
-	private void initInodeTable() {
-		inodeTable = new Inode[superblock.inodesInFileSystem()];
-
-		int inodesInGroup = superblock.inodesInGroup();
-		// filles in the inode table
-		for (int i = 0; i < inodeTable.length; i++) {
-			/*
-			 * get the offset from the begging of an inode table:
-			 * 
-			 * say we want inode 5 and there are 3 inodes per group block this variable will
-			 * then be 1 because inode 5 will be the second inode in the second block group
-			 */
-			int inode = i % inodesInGroup;
-
-			/*
-			 * index pointing to a group descriptor int the group descriptor array that the
-			 * inode will be in
-			 */
-			int groupDescritor = i / inodesInGroup;
-
-			// get the inode table pointer
-			inodeTable[i] = new Inode(this, groupDescriptors[groupDescritor].inodeTablePointer() * blockSize + inode * Inode.size);
-		}
-	}
-
-	/**
 	 * Return the specified inode
 	 * 
 	 * @param number
@@ -117,7 +69,21 @@ public class Volume {
 	 * @return inode
 	 */
 	Inode getInode(int number) {
-		return inodeTable[number - 1];
+		number--;
+		// calculate the number of the descriptor where the sought inode is located
+		int gdNum = number / superblock.inodesInGroup();
+
+		// the offset from which the group descriptor starts
+		int gdoffset = 2 * blockSize + gdNum * GroupDescriptor.size;
+
+		// calculate the offset from which the group descriptor's inode table start
+		int tablep = new GroupDescriptor(this, gdoffset).inodeTablePointer() * blockSize;
+
+		// calculate the offset fromthe start of the inode table pointer to the desired
+		// inode
+		int inodepointer = tablep + (number % superblock.inodesInGroup()) * Inode.size;
+
+		return new Inode(this, inodepointer);
 	}
 
 	/**
@@ -165,6 +131,12 @@ public class Volume {
 		return getBytes(block * blockSize + offset, length);
 	}
 
+	void copy(int block, int startInBlock, byte[] array, int startArray, int length) {
+
+		buffer.position(block * blockSize + startInBlock);
+		buffer.get(array, startArray, length);
+	}
+
 	/**
 	 * Reads {@code length} number of bytes starting from {@code offset} and
 	 * converts them to a {@link String}
@@ -176,35 +148,45 @@ public class Volume {
 	 * @return String representation of the read bytes
 	 */
 	String getStringAt(int offset, int length) {
-		byte[] str = getBytes(offset, length);
-		String string = "";
 
-		for (int i = 0; i < str.length; i++) {
-			string += (char) (str[i] & 0xff);
+		StringBuilder builder = new StringBuilder();
+
+		for (int i = 0; i < length; i++) {
+			char chard = (char) (buffer.getChar(offset + i) & 0xff);
+			builder.append(chard);
 		}
 
-		return string;
+		return builder.toString();
 	}
 
 	/**
-	 * * Reads {@code length} number of bytes starting from {@code offset} and
-	 * converts them to an unsigned {@link Integer}
+	 * Reads an {@code int} starting from {@code offset} and converts them to an
+	 * unsigned {@link Integer}
 	 * 
 	 * @param offset
 	 *          byte from which the reading starts
-	 * @param length
-	 *          number of bytes to be read
 	 * @return Unsigned integer representation of the read bytes
 	 */
-	int getIntAt(int offset, int length) {
-		return Utils.byteArrayToInt(getBytes(offset, length));
+	int getIntAt(int offset) {
+		return buffer.getInt(offset);
+	}
+
+	/**
+	 * Reads an {@code short} starting from {@code offset} and converts them to an
+	 * unsigned {@link Integer}
+	 * 
+	 * @param offset
+	 * @return
+	 */
+	short getShortAt(int offset) {
+		return buffer.getShort(offset);
 	}
 
 	/**
 	 * Initializes the root directory
 	 */
-	void initRoot() {
-		root = new Ext2File(this, getInode(2), "root");
+	private void initRoot() {
+		root = new Ext2File(this, getInode(2), "");
 	}
 
 	/**
@@ -220,21 +202,23 @@ public class Volume {
 				return str.equals(fileName);
 			})[0];
 		}
-		
-		String newParent ="";
-		String newChild = "";
+
 		int last = parentPath.lastIndexOf('/');
-		try {
-			newParent = parentPath.substring(0, last);
-			newChild =parentPath.substring(last + 1);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		
-		
+		String newParent = parentPath.substring(0, last);
+		final String newChild = parentPath.substring(last + 1);
+
 		Ext2File newFile = getFile(newParent, newChild).listExt2Files((str) -> {
 			return str.equals(fileName);
 		})[0];
 		return newFile;
+	}
+
+	public int getByte(int i) {
+		// TODO Auto-generated method stub
+		return buffer.get(i);
+	}
+
+	public char readChar(int i) {
+		return buffer.getChar(i);
 	}
 }
