@@ -46,7 +46,6 @@ public class SuperBlock {
 	 *          volume
 	 */
 	public SuperBlock(Volume volume, int offset) {
-	
 		inodefs = volume.getIntAt(offset + numInodesFileSys);
 		blocksfs = volume.getIntAt(offset + numBlocksFileSys);
 		blocksgr = volume.getIntAt(offset + numBlocksGroup);
