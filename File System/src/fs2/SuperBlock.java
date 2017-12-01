@@ -46,12 +46,12 @@ public class SuperBlock {
 	 *          volume
 	 */
 	public SuperBlock(Volume volume, int offset) {
-		
-		inodefs = volume.getIntAt(offset + numInodesFileSys, 4);
-		blocksfs = volume.getIntAt(offset + numBlocksFileSys, 4);
-		blocksgr = volume.getIntAt(offset + numBlocksGroup, 4);
-		inodesgr = volume.getIntAt(offset + numInodesGroup, 4);
-		inodesz = volume.getIntAt(offset + inodeSize, 4);
+	
+		inodefs = volume.getIntAt(offset + numInodesFileSys);
+		blocksfs = volume.getIntAt(offset + numBlocksFileSys);
+		blocksgr = volume.getIntAt(offset + numBlocksGroup);
+		inodesgr = volume.getIntAt(offset + numInodesGroup);
+		inodesz = volume.getIntAt(offset + inodeSize);
 		label = volume.getStringAt(offset + volLabel, 16);
 	}
 
