@@ -1,5 +1,6 @@
 package fs2;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
@@ -70,7 +71,7 @@ public class Inode {
 	private long BlocksPointersTogo;
 
 	private Volume volume;
-	int offset;
+	private int offset;
 
 	public Inode(Volume vol, int offset) {
 		volume = vol;
@@ -80,7 +81,7 @@ public class Inode {
 		uid = volume.getShortAt(offset + i_uid);
 
 		// combines the upper and lower bits of the size
-		sizeB = (volume.getIntAt(offset + i_size_u) * (int) Math.pow(2, 32)) + volume.getIntAt(offset + i_size_l);
+		sizeB = (volume.getIntAt(offset + i_size_u) * (long) Math.pow(2, 32)) + volume.getIntAt(offset + i_size_l);
 
 		atime = new Date(volume.getIntAt(offset + i_atime) * 1000);
 		ctime = new Date(volume.getIntAt(offset + i_ctime) * 1000);
@@ -175,6 +176,42 @@ public class Inode {
 	}
 
 	/**
+	 * Returns an array of all the block numbers of data blocks holding the contents
+	 * of the inode's file
+	 * 
+	 * @return array of content block numbers
+	 */
+	public Integer[] getBlockPointers() {
+		ArrayList<Integer> blockpointers = new ArrayList<>();
+
+		blockGathering: {
+			// get first 12 block
+			int[] first12 = getI_block();
+
+			// put them in into the blockpointers list
+			for (int pointer : first12) {
+
+				if (pointer != 0)
+					blockpointers.add(pointer);
+
+				if (--BlocksPointersTogo == 0)
+					break blockGathering;
+			}
+
+			// get the block pointers from the indirect pointers
+			for (int i = 1; i <= 3 && BlocksPointersTogo > 0; i++) {
+				ArrayList<Integer> nums = indirectPointers(get_indirect(i), i);
+				blockpointers.addAll(nums);
+			}
+		}
+
+		Integer[] blockPointers = new Integer[blockpointers.size()];
+		blockpointers.toArray(blockPointers);
+
+		return blockPointers;
+	}
+
+	/**
 	 * Returns an array of Pointers to data blocks
 	 * 
 	 * @return
@@ -199,42 +236,6 @@ public class Inode {
 	 */
 	private int get_indirect(int number) {
 		return volume.getIntAt(offset + first_ind + (number - 1) * 4);
-	}
-
-	/**
-	 * Returns an array of all the block numbers of data blocks holding the contents
-	 * of the inode's file
-	 * 
-	 * @return array of content block numbers
-	 */
-	public Integer[] getBlockPointers() {
-		ArrayList<Integer> blockpointers = new ArrayList<>();
-
-		blockGathering: {
-			// get first 12 block
-			int[] first12 = getI_block();
-
-			//put them in into the blockpointers list
-			for (int pointer : first12) {
-
-				if (pointer != 0)
-					blockpointers.add(pointer);
-
-				if (--BlocksPointersTogo == 0)
-					break blockGathering;
-			}
-
-			// get the block pointers from the indirect pointers
-			for (int i = 1; i <= 3 && BlocksPointersTogo > 0; i++) {
-				ArrayList<Integer> nums = indirectPointers(get_indirect(i), i);
-				blockpointers.addAll(nums);
-			}
-		}
-
-		Integer[] blockPointers = new Integer[blockpointers.size()];
-		blockpointers.toArray(blockPointers);
-
-		return blockPointers;
 	}
 
 	/**
@@ -290,5 +291,30 @@ public class Inode {
 
 			return fromHigherLevel;
 		}
+	}
+
+	String fileInfo(String name) {
+		StringBuilder builder = new StringBuilder();
+		builder.append((mode & 0x4000) > 0 ? 'd' : '-');
+
+		// checking the access permissions
+		int access = this.getI_mode() & 0x1FF;
+		char[] rwx = { 'r', 'w', 'x' };
+		int flagchecker = 0x100;
+
+		for (int i = 0; flagchecker > 0; i++) {
+			builder.append((access & flagchecker) > 0 ? rwx[i % 3] : '-');
+			flagchecker >>= 1;
+		}
+
+		builder.append(" " + getI_links_count());
+		builder.append("" + getI_uid());
+		builder.append(" " + getI_gid());
+
+		builder.append(" " + getI_size());
+		builder.append(" " + new SimpleDateFormat("MMM dd HH:mm").format(getI_atime()));
+		builder.append(" " + name);
+
+		return builder.toString();
 	}
 }
