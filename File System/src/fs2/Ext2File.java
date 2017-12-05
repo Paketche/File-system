@@ -1,8 +1,10 @@
 package fs2;
 
+import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 
 import util.Utils;
@@ -10,7 +12,7 @@ import util.Utils;
 public class Ext2File {
 
 	private Volume volume;
-	Inode inode;
+	private Inode inode;
 
 	/**
 	 * Hold the path of the file
@@ -21,14 +23,10 @@ public class Ext2File {
 	 */
 	private int nameIndex;
 	/**
-	 * Size of file in bytes
-	 */
-	private long size;
-	/**
 	 * Holds the of the next byte to be read(used as a bookmark)
 	 */
 	private long possition;
-	
+
 	/**
 	 * Holds the number of the blocks in the volume that hold the contents of the
 	 * file
@@ -42,11 +40,13 @@ public class Ext2File {
 	 *          - the volume where the file is expected to be
 	 * @param name
 	 *          - absolute path of the file
-	 * @throws FileNotFoundException
-	 *           when the path is either incorrect or the file doesnt exist
+	 * @throws IOException
 	 */
 	public Ext2File(Volume vol, String name) throws FileNotFoundException {
-		this(vol, null, name);
+		volume = vol;
+		fullname = name;
+		nameIndex = name.lastIndexOf('/');
+		inode = getParent().getFileInode(getName());
 	}
 
 	/**
@@ -60,7 +60,6 @@ public class Ext2File {
 		volume = vol;
 		this.inode = inode;
 		fullname = name;
-		size = inode.getI_size();
 		nameIndex = name.lastIndexOf('/');
 	}
 
@@ -77,56 +76,21 @@ public class Ext2File {
 	 * Returns the parent file
 	 * 
 	 * @return parent file
+	 * @throws FileNotFoundException
 	 */
-	public Ext2File getParent() {
-		try {
-			return volume.getFile(fullname.substring(0, nameIndex), fullname.substring(nameIndex + 1));
-		} catch (IOException e) {
-			e.printStackTrace();
-			return null;
-		}
-
+	public Ext2File getParent() throws FileNotFoundException {
+		if (!fullname.equals(""))
+			return volume.getFile(fullname.substring(0, nameIndex));
+		return this;
 	}
 
 	/**
 	 * 
 	 * @return
+	 * @throws IOException
 	 */
-	public String ls() {
-		StringBuilder builder = new StringBuilder();
-		builder.append(isDirectory() ? 'd' : '-');
-
-		// checking the access permissions
-		int access = inode.getI_mode() & 0x1FF;
-		char[] rwx = { 'r', 'w', 'x' };
-		int flagchecker = 0x100;
-
-		for (int i = 0; flagchecker > 0; i++) {
-			builder.append(((access & flagchecker) > 0) ? rwx[i % 3] : '-');
-			flagchecker >>= 1;
-		}
-
-		builder.append(" " + inode.getI_links_count());
-		builder.append("" + inode.getI_uid());
-		builder.append(" " + inode.getI_gid());
-
-		builder.append(" " + new SimpleDateFormat("MMM dd HH:mm").format(inode.getI_mtime()));
-		builder.append(" " + getName());
-
-		return builder.toString();
-	}
-
-	/**
-	 * If this file is a directory it scans it for the file specified in the
-	 * parameter and returns its inode object
-	 * 
-	 * @param name
-	 *          of the searched file
-	 * @return inode object if the file is found and this is a directory </br>
-	 *         null - otherwise
-	 */
-	public Inode getFileInode(String name) {
-		return null;
+	public long size() {
+		return inode.getI_size();
 	}
 
 	/**
@@ -139,18 +103,6 @@ public class Ext2File {
 	}
 
 	/**
-	 * Retrieves the first occurrence of a file that is accepted by the file filter
-	 * @param filter
-	 * @return
-	 * @throws IOException
-	 */
-	public Ext2File getFirstFile(Ext2FilenameFilter filter) throws IOException {
-		Ext2File[] fiels = listExt2Files(filter);
-
-		return (fiels.length == 0) ? null : fiels[0];
-	}
-
-	/**
 	 * Returns an array of file locate in this directory( if the this is a
 	 * directory) {@link #listExt2Files() }
 	 * 
@@ -159,7 +111,7 @@ public class Ext2File {
 	 *         null - otherwise
 	 * @throws IOException
 	 */
-	public Ext2File[] listExt2Files() throws IOException {
+	public Ext2File[] listExt2Files() {
 		return listExt2Files(null);
 	}
 
@@ -169,7 +121,7 @@ public class Ext2File {
 	 * @return
 	 * @throws IOException
 	 */
-	public Ext2File[] listExt2Files(Ext2FilenameFilter filter) throws IOException {
+	public Ext2File[] listExt2Files(Ext2FilenameFilter filter) {
 		if (!isDirectory()) {
 			return null;
 		}
@@ -177,33 +129,36 @@ public class Ext2File {
 			if (blocks == null)
 				initFileContents();
 
-			ArrayList<Ext2File> inodes = new ArrayList<>();
+			ArrayList<String> i_n = getInodes_and_Names();
+			Ext2File[] subfiles = new Ext2File[i_n.size() - 2];
 
-			// get past current and parent
-			int offset = Utils.byteArrayToInt(this.read(4, 2));
-			offset += Utils.byteArrayToInt(this.read(offset + 4, 2));
+			for (int i = 2; i < i_n.size(); i++) {
+				String entry = i_n.get(i);
+				int sep = entry.indexOf(' ');
 
-			int inode = Utils.byteArrayToInt(this.read(offset, 4));
-			while (inode > 0 && offset < size()) {
+				int inodeNum = Integer.parseInt(entry.substring(0, sep));
+				String name = entry.substring(sep + 1);
 
-				int length = Utils.byteArrayToInt(this.read(offset + 4, 2));
-				int namelen = Utils.byteArrayToInt(this.read(offset + 6, 1));
-				String name = Utils.byteArrayToASCIIString(this.read(offset + 8, namelen));
-
-				if (filter == null || filter.accept(name))
-					inodes.add(new Ext2File(volume, volume.getInode(inode), fullname + "/" + name));
-
-				offset += length;
-				if (offset == Volume.blockSize)
-					break;
-				inode = Utils.byteArrayToInt(this.read(offset, 4));
+				subfiles[i - 2] = new Ext2File(volume, volume.getInode(inodeNum), fullname + "/" + name);
 			}
 
-			Ext2File[] subfiles = new Ext2File[inodes.size()];
-			inodes.toArray(subfiles);
 			return subfiles;
 		}
 
+	}
+
+	public void ls() throws IOException {
+		ArrayList<String> i_n = getInodes_and_Names();
+
+		for (int i = 0; i < i_n.size(); i++) {
+			String entry = i_n.get(i);
+			int sep = entry.indexOf(' ');
+
+			int inodeNum = Integer.parseInt(entry.substring(0, sep));
+			String name = entry.substring(sep + 1);
+
+			System.out.println(volume.getInode(inodeNum).fileInfo(name));
+		}
 	}
 
 	/**
@@ -211,9 +166,10 @@ public class Ext2File {
 	 * @param startByte
 	 * @param length
 	 * @return
+	 * @throws EOFException
 	 * @throws IOException
 	 */
-	public byte[] read(long startByte, int length) throws IOException {
+	public byte[] read(long startByte, int length) {
 		if (blocks == null)
 			initFileContents();
 
@@ -274,20 +230,41 @@ public class Ext2File {
 	 * @return
 	 * @throws IOException
 	 */
-	public long size() {
-		return size;
-	}
-
-	/**
-	 * 
-	 * @return
-	 * @throws IOException
-	 */
-	public byte[] fullyRead() throws IOException {
+	public byte[] fullyRead() {
 		if (blocks == null) {
 			initFileContents();
 		}
 		return read(0, blocks.length * 1024);
+	}
+
+	/**
+	 * If this file is a directory it scans it for the file specified in the
+	 * parameter and returns its inode object
+	 * 
+	 * @param name
+	 *          of the searched file
+	 * @return inode object if the file is found and this is a directory </br>
+	 *         null - otherwise
+	 */
+	Inode getFileInode(String name) {
+		if (isDirectory()) {
+
+			ArrayList<String> i_n = this.getInodes_and_Names();
+
+			for (int i = 2; i < i_n.size(); i++) {
+				String entry = i_n.get(i);
+				int sep = entry.indexOf(' ');
+
+				//separate the inode from the the file name
+				int inodeNum = Integer.parseInt(entry.substring(0, sep));
+				String name2 = entry.substring(sep + 1);
+
+				if (name.equals(name2)) {
+					return volume.getInode(inodeNum);
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -298,5 +275,30 @@ public class Ext2File {
 		// this holds the numbers of all the blocks that hold contents of this file
 		blocks = inode.getBlockPointers();
 		possition = 0;
+	}
+
+	private ArrayList<String> getInodes_and_Names() {
+		ArrayList<String> subfiles = new ArrayList<>();
+
+		int offset = 0;
+
+		ByteBuffer buffer = ByteBuffer.wrap(this.fullyRead());
+		buffer.order(ByteOrder.LITTLE_ENDIAN);
+
+		while (offset < size()) {
+			// int inode = Utils.byteArrayToInt(this.read(offset, 4));
+			int inode = buffer.getInt(offset);
+
+			
+			int length = buffer.getShort(offset + 4);
+			int namelen = buffer.get(offset + 6);
+			String name = Utils.byteArrayToASCIIString(this.read(offset + 8, namelen));
+
+			subfiles.add(inode + " " + name);
+
+			offset += length;
+		}
+
+		return subfiles;
 	}
 }
