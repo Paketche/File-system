@@ -1,5 +1,6 @@
 package fs2;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -16,7 +17,7 @@ public class Volume {
 	/**
 	 * Reference to the root directory in the file system
 	 */
-	Ext2File root;
+Ext2File root;
 	/**
 	 * Holds the whole directory
 	 */
@@ -54,11 +55,29 @@ public class Volume {
 	}
 
 	/**
-	 * Initializes a copy a super block
+	 * 
+	 * @param absolutePath
+	 * @param fileName
+	 * @return
+	 * @throws FileNotFoundException 
+	 * @throws IOException
 	 */
-	private void initSuperBlock() {
-		// get the block that is just after the boot block
-		superblock = new SuperBlock(this, blockSize);
+	public Ext2File getFile(String absolutePath) throws FileNotFoundException{
+		if (absolutePath.equals("")) {
+			return root;
+		}
+		
+		//get the absolute path of the parent and just the name of the child
+		String parent = absolutePath.substring(0, absolutePath.lastIndexOf('/'));
+		String child = absolutePath.substring(absolutePath.lastIndexOf('/') + 1);
+
+		Inode newFileInode = getFile(parent).getFileInode(child);
+		if(newFileInode==null) {
+			throw new FileNotFoundException();
+		}
+		Ext2File newFile = new Ext2File(this, newFileInode, absolutePath);
+
+		return newFile;
 	}
 
 	/**
@@ -182,6 +201,23 @@ public class Volume {
 		return buffer.getShort(offset);
 	}
 
+	int getByte(int i) {
+		// TODO Auto-generated method stub
+		return buffer.get(i);
+	}
+
+	char readChar(int i) {
+		return buffer.getChar(i);
+	}
+
+	/**
+	 * Initializes a copy a super block
+	 */
+	private void initSuperBlock() {
+		// get the block that is just after the boot block
+		superblock = new SuperBlock(this, blockSize);
+	}
+
 	/**
 	 * Initializes the root directory
 	 */
@@ -189,36 +225,4 @@ public class Volume {
 		root = new Ext2File(this, getInode(2), "");
 	}
 
-	/**
-	 * 
-	 * @param parentPath
-	 * @param fileName
-	 * @return
-	 * @throws IOException
-	 */
-	public Ext2File getFile(String parentPath, String fileName) throws IOException {
-		if (parentPath.equals("")) {
-			return root.listExt2Files((str) -> {
-				return str.equals(fileName);
-			})[0];
-		}
-
-		int last = parentPath.lastIndexOf('/');
-		String newParent = parentPath.substring(0, last);
-		final String newChild = parentPath.substring(last + 1);
-
-		Ext2File newFile = getFile(newParent, newChild).listExt2Files((str) -> {
-			return str.equals(fileName);
-		})[0];
-		return newFile;
-	}
-
-	public int getByte(int i) {
-		// TODO Auto-generated method stub
-		return buffer.get(i);
-	}
-
-	public char readChar(int i) {
-		return buffer.getChar(i);
-	}
 }
