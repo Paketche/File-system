@@ -141,6 +141,25 @@ public class Utils {
 		}
 		return a == 1;
 	}
+public static void dumpHexRepresnetation(byte[] data) {
+		
+		for (int i = 0; i < data.length; i += 16) {
+
+			for (int j = 0; j < 16 && i + j < data.length; j++) {
+				System.out.format("%02x %s", data[j + i], (j + 1) % 8 == 0 ? "| " : " ");
+			}
+
+			for (int j = 0; j < 16 && i + j < data.length; j++) {
+				if (data[j + i] > 32 && data[j + i] < 127)
+					System.out.format("%c%s", (char) data[j + i], (j + 1) % 8 == 0 ? "| " : "");
+				else
+					System.out.print("_" + ((j + 1) % 8 == 0 ? "| " : ""));
+			}
+
+			System.out.println();
+		}
+		System.out.println("---------------------------------------------------");
+	}
 
 	public static void main(String[] args) {
 		System.out.println(Integer.toHexString(1000));
